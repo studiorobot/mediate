@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Mediate</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    #output-image {
+      margin-top: 20px;
+      border: 1px solid #ccc;
+      width: auto;
+      height: 300px;
+      display: none;
+      /* hidden by default */
+    }
+
+    #download-link {
+      display: none;
+      /* hidden by default */
+    }
+
+    .controls {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Mediate</h1>
+  <h2>PDF Thumbnail Generator</h2>
+  <div class="controls">
+    <input type="file" id="pdf-upload" accept="application/pdf">
+    <input type="number" id="page-number" min="1" value="1" placeholder="Page Number">
+    <button onclick="generateThumbnail()">Generate Thumbnail</button>
+  </div>
+
+  <canvas id="pdf-canvas"></canvas>
+  <img id="output-image" alt="Thumbnail will appear here">
+  <br>
+  <a id="download-link" href="#" download="thumbnail.png" style="display: none;">Download Thumbnail</a>
+
+  <script>
+    async function generateThumbnail() {
+      const fileInput = document.getElementById('pdf-upload');
+      const pageNumInput = document.getElementById('page-number');
+      const canvas = document.getElementById('pdf-canvas');
+      const outputImage = document.getElementById('output-image');
+      const downloadLink = document.getElementById('download-link');
+
+      const file = fileInput.files[0];
+      const pageNum = parseInt(pageNumInput.value, 10);
+      const MAX_SIZE = 200 * 1024; // 200KB
+
+      if (!file || isNaN(pageNum)) {
+        alert('Please upload a PDF and enter a valid page number.');
+        return;
+      }
+
+      const fileReader = new FileReader();
+      fileReader.onload = async function () {
+        const typedArray = new Uint8Array(this.result);
+
+        try {
+          const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+
+          if (pageNum < 1 || pageNum > pdf.numPages) {
+            alert(`PDF only has ${pdf.numPages} pages.`);
+            return;
+          }
+
+          const page = await pdf.getPage(pageNum);
+
+          // Start with high scale and decrease if needed
+          let scale = 2.0;
+          let quality = 0.92;
+          let imageData;
+          let imageSize;
+
+          while (scale >= 0.5) {
+            const viewport = page.getViewport({ scale });
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const context = canvas.getContext('2d');
+
+            // Clear previous render
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            await page.render({ canvasContext: context, viewport }).promise;
+
+            // Try JPEG for better compression
+            imageData = canvas.toDataURL('image/jpeg', quality);
+            imageSize = Math.round((imageData.length * 3) / 4); // Base64 size estimate
+
+            if (imageSize <= MAX_SIZE) break;
+
+            // Reduce quality or scale
+            if (quality > 0.5) {
+              quality -= 0.1;
+            } else {
+              scale -= 0.2;
+              quality = 0.92; // reset quality on scale drop
+            }
+          }
+
+          if (imageSize > MAX_SIZE) {
+            alert('Unable to compress image under 200KB. Try a smaller page or contact support.');
+            return;
+          }
+
+          outputImage.src = imageData;
+          outputImage.style.display = 'block'; // show the image now
+          downloadLink.href = imageData;
+          downloadLink.download =  file.name.replace(/\.pdf$/i, '') + '.jpg';;
+          downloadLink.style.display = 'inline-block';
+
+        } catch (err) {
+          console.error(err);
+          alert('Error rendering PDF page.');
+        }
+      };
+
+      fileReader.readAsArrayBuffer(file);
+    }
+  </script>
+
+
+</body>
+
+</html>
